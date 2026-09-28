@@ -495,6 +495,11 @@ impl RendezvousServer {
                     if let Some(sink) = sink.take() {
                         self.tcp_punch.lock().await.insert(try_into_v4(addr), sink);
                     }
+                    // Uzaktan Yardım: yalnızca izin listesindeki ID'lere relay.
+                    if !crate::allowlist::is_allowed(&rf.id) {
+                        log::info!("Allowlist: relay {} -> {} reddedildi", addr, rf.id);
+                        return true;
+                    }
                     if let Some(peer) = self.pm.get_in_memory(&rf.id).await {
                         let mut msg_out = RendezvousMessage::new();
                         rf.socket_addr = AddrMangle::encode(addr).into();
@@ -684,6 +689,16 @@ impl RendezvousServer {
             let mut msg_out = RendezvousMessage::new();
             msg_out.set_punch_hole_response(PunchHoleResponse {
                 failure: punch_hole_response::Failure::LICENSE_MISMATCH.into(),
+                ..Default::default()
+            });
+            return Ok((msg_out, None));
+        }
+        // Uzaktan Yardım: yalnızca izin listesindeki ID'lere bağlanılabilir.
+        if !crate::allowlist::is_allowed(&ph.id) {
+            log::info!("Allowlist: {} -> {} reddedildi", addr, ph.id);
+            let mut msg_out = RendezvousMessage::new();
+            msg_out.set_punch_hole_response(PunchHoleResponse {
+                failure: punch_hole_response::Failure::ID_NOT_EXIST.into(),
                 ..Default::default()
             });
             return Ok((msg_out, None));
