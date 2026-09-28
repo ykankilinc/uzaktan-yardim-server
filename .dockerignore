@@ -1,4 +1,3 @@
 .git
 target
-*.sqlite3
-*.sqlite3-*
+# db_v2.sqlite3 derleme için gerekli (sqlx sorguları derleme zamanında buna karşı doğrulanır)
