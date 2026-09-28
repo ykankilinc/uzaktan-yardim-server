@@ -7,6 +7,10 @@
 //!
 //! Değişken tanımlı değilse filtre kapalıdır (upstream davranışı). Tanımlı ama
 //! dosya hiç okunamamışsa hiçbir ID'ye izin verilmez.
+//!
+//! `ALLOWLIST_REJECT_LOG` tanımlıysa reddedilen her istek bu dosyaya JSON satırı
+//! olarak eklenir (`{"t":<unix>,"ip":"..","id":".."}`); panel buradan okur.
+//! Dosya 1 MB'ı geçince `.1` uzantısıyla bir kez döndürülür.
 
 use hbb_common::log;
 use once_cell::sync::Lazy;
@@ -17,6 +21,7 @@ use std::{
 };
 
 const CHECK_INTERVAL: Duration = Duration::from_secs(3);
+const REJECT_LOG_MAX_BYTES: u64 = 1024 * 1024;
 
 #[derive(Default)]
 struct State {
@@ -28,6 +33,56 @@ struct State {
 static PATH: Lazy<Option<String>> =
     Lazy::new(|| std::env::var("ALLOWLIST_FILE").ok().filter(|p| !p.is_empty()));
 static STATE: Lazy<RwLock<State>> = Lazy::new(Default::default);
+static REJECT_LOG: Lazy<Option<String>> =
+    Lazy::new(|| std::env::var("ALLOWLIST_REJECT_LOG").ok().filter(|p| !p.is_empty()));
+
+pub fn record_rejection(ip: std::net::IpAddr, id: &str) {
+    let Some(path) = REJECT_LOG.as_deref() else {
+        return;
+    };
+    let ip = match ip {
+        std::net::IpAddr::V6(v6) => v6
+            .to_ipv4_mapped()
+            .map_or_else(|| v6.to_string(), |v4| v4.to_string()),
+        v4 => v4.to_string(),
+    };
+    let t = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    // ID ve IP yalnızca rakam/nokta/iki nokta içerir; yine de JSON için kaçışla.
+    let line = format!(
+        "{{\"t\":{t},\"ip\":{},\"id\":{}}}\n",
+        json_str(&ip),
+        json_str(id)
+    );
+    if std::fs::metadata(path).map_or(false, |m| m.len() > REJECT_LOG_MAX_BYTES) {
+        let _ = std::fs::rename(path, format!("{path}.1"));
+    }
+    use std::io::Write;
+    let res = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .and_then(|mut f| f.write_all(line.as_bytes()));
+    if let Err(e) = res {
+        log::warn!("Red kaydı yazılamadı ({path}): {e}");
+    }
+}
+
+fn json_str(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            c if c.is_control() => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
 
 pub fn is_allowed(id: &str) -> bool {
     let Some(path) = PATH.as_deref() else {

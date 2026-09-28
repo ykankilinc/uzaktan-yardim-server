@@ -498,6 +498,7 @@ impl RendezvousServer {
                     // Uzaktan Yardım: yalnızca izin listesindeki ID'lere relay.
                     if !crate::allowlist::is_allowed(&rf.id) {
                         log::info!("Allowlist: relay {} -> {} reddedildi", addr, rf.id);
+                        crate::allowlist::record_rejection(addr.ip(), &rf.id);
                         return true;
                     }
                     if let Some(peer) = self.pm.get_in_memory(&rf.id).await {
@@ -696,6 +697,7 @@ impl RendezvousServer {
         // Uzaktan Yardım: yalnızca izin listesindeki ID'lere bağlanılabilir.
         if !crate::allowlist::is_allowed(&ph.id) {
             log::info!("Allowlist: {} -> {} reddedildi", addr, ph.id);
+            crate::allowlist::record_rejection(addr.ip(), &ph.id);
             let mut msg_out = RendezvousMessage::new();
             msg_out.set_punch_hole_response(PunchHoleResponse {
                 failure: punch_hole_response::Failure::ID_NOT_EXIST.into(),
