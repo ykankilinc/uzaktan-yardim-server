@@ -498,7 +498,13 @@ impl RendezvousServer {
                     // Uzaktan Yardım: yalnızca izin listesindeki ID'lere relay.
                     if !crate::allowlist::is_allowed(&rf.id) {
                         log::info!("Allowlist: relay {} -> {} reddedildi", addr, rf.id);
-                        crate::allowlist::record_rejection(addr.ip(), &rf.id);
+                        crate::allowlist::record_rejection(addr.ip(), &rf.id, "");
+                        return true;
+                    }
+                    // Uzaktan Yardım: teknisyen anahtarı bu ID'ye izin vermeli.
+                    if !crate::techtoken::allows(&rf.token, &rf.id) {
+                        log::info!("Teknisyen anahtarı: relay {} -> {} reddedildi", addr, rf.id);
+                        crate::allowlist::record_rejection(addr.ip(), &rf.id, "token");
                         return true;
                     }
                     if let Some(peer) = self.pm.get_in_memory(&rf.id).await {
@@ -697,10 +703,22 @@ impl RendezvousServer {
         // Uzaktan Yardım: yalnızca izin listesindeki ID'lere bağlanılabilir.
         if !crate::allowlist::is_allowed(&ph.id) {
             log::info!("Allowlist: {} -> {} reddedildi", addr, ph.id);
-            crate::allowlist::record_rejection(addr.ip(), &ph.id);
+            crate::allowlist::record_rejection(addr.ip(), &ph.id, "");
             let mut msg_out = RendezvousMessage::new();
             msg_out.set_punch_hole_response(PunchHoleResponse {
                 failure: punch_hole_response::Failure::ID_NOT_EXIST.into(),
+                ..Default::default()
+            });
+            return Ok((msg_out, None));
+        }
+        // Uzaktan Yardım: teknisyen anahtarı bu ID'ye izin vermeli (Teknisyen uygulaması
+        // panelden eşleşince anahtarı `token` alanında gönderir).
+        if !crate::techtoken::allows(&ph.token, &ph.id) {
+            log::info!("Teknisyen anahtarı: {} -> {} reddedildi", addr, ph.id);
+            crate::allowlist::record_rejection(addr.ip(), &ph.id, "token");
+            let mut msg_out = RendezvousMessage::new();
+            msg_out.set_punch_hole_response(PunchHoleResponse {
+                other_failure: crate::techtoken::DENIED_MESSAGE.to_owned(),
                 ..Default::default()
             });
             return Ok((msg_out, None));

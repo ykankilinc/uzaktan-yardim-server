@@ -9,7 +9,8 @@
 //! dosya hiç okunamamışsa hiçbir ID'ye izin verilmez.
 //!
 //! `ALLOWLIST_REJECT_LOG` tanımlıysa reddedilen her istek bu dosyaya JSON satırı
-//! olarak eklenir (`{"t":<unix>,"ip":"..","id":".."}`); panel buradan okur.
+//! olarak eklenir (`{"t":<unix>,"ip":"..","id":"..","r":".."}`; `r`: "" izin
+//! listesi, "token" teknisyen anahtarı); panel buradan okur.
 //! Dosya 1 MB'ı geçince `.1` uzantısıyla bir kez döndürülür.
 
 use hbb_common::log;
@@ -36,7 +37,7 @@ static STATE: Lazy<RwLock<State>> = Lazy::new(Default::default);
 static REJECT_LOG: Lazy<Option<String>> =
     Lazy::new(|| std::env::var("ALLOWLIST_REJECT_LOG").ok().filter(|p| !p.is_empty()));
 
-pub fn record_rejection(ip: std::net::IpAddr, id: &str) {
+pub fn record_rejection(ip: std::net::IpAddr, id: &str, reason: &str) {
     let Some(path) = REJECT_LOG.as_deref() else {
         return;
     };
@@ -51,9 +52,10 @@ pub fn record_rejection(ip: std::net::IpAddr, id: &str) {
         .map_or(0, |d| d.as_secs());
     // ID ve IP yalnızca rakam/nokta/iki nokta içerir; yine de JSON için kaçışla.
     let line = format!(
-        "{{\"t\":{t},\"ip\":{},\"id\":{}}}\n",
+        "{{\"t\":{t},\"ip\":{},\"id\":{},\"r\":{}}}\n",
         json_str(&ip),
-        json_str(id)
+        json_str(id),
+        json_str(reason)
     );
     if std::fs::metadata(path).map_or(false, |m| m.len() > REJECT_LOG_MAX_BYTES) {
         let _ = std::fs::rename(path, format!("{path}.1"));

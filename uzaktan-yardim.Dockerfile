@@ -1,10 +1,11 @@
-# Uzaktan Yardım — hbbs/hbbr (izin listesi yamalı) imajı.
+# Uzaktan Yardım — hbbs/hbbr (izin listesi + teknisyen anahtarı yamalı) imajı.
 # Resmi rustdesk/rustdesk-server imajıyla aynı kullanım: `hbbs ...` / `hbbr ...`, veri /root.
 
 FROM rust:1.90-bookworm AS build
 WORKDIR /src
 COPY . .
-RUN cargo build --release --locked --bin hbbs --bin hbbr
+RUN cargo test --release --locked --lib techtoken \
+ && cargo build --release --locked --bin hbbs --bin hbbr
 
 FROM debian:bookworm-slim
 RUN apt-get update \
